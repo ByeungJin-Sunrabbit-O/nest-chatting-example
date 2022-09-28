@@ -1,3 +1,5 @@
+import { Injectable } from "@nestjs/common";
+
 import {
   ConnectedSocket,
   MessageBody,
@@ -6,43 +8,92 @@ import {
   WebSocketServer,
   WsResponse,
 } from "@nestjs/websockets";
+import {
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  OnGatewayInit,
+} from "@nestjs/websockets/interfaces/hooks";
+import { RedisClientType } from "@redis/client";
 import { Server } from "http";
-import { from, map, Observable } from "rxjs";
+import { createClient } from "redis";
 import { Socket } from "socket.io";
 
-@WebSocketGateway(80, {
+const EVENT = {
+  JOIN: "join",
+  CHANNEL_MESSAGE: "channelMessage",
+  WHISPER: "whisper",
+  LEAVE: "leave",
+  EVERYONE: "everyone",
+} as const;
+
+@WebSocketGateway({
   namespace: "chat",
   cors: { origin: "*" },
   transports: ["websocket"],
 })
-export class ChatGateway {
+@Injectable()
+export class ChatGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server: Server;
 
-  @SubscribeMessage("join")
-  joinRoom(@MessageBody() req, @ConnectedSocket() client: Socket) {
-    console.log(client.id);
-    client.join(req?.roomId);
+  redis: RedisClientType;
+  async afterInit() {
+    this.redis = createClient();
+    await this.redis.connect();
   }
 
-  @SubscribeMessage("sendMessage")
-  listenMessage(@MessageBody() req, @ConnectedSocket() client: Socket) {
-    console.log(client.id);
-    client.broadcast.to(req?.roomId).emit("listenMessage", req?.message);
+  handleConnection(client: Socket) {
+    this.redis.set(client.request.headers.authorization, client.id);
   }
 
-  @SubscribeMessage("leave")
-  leaveRoom(@MessageBody() req, @ConnectedSocket() client: Socket) {
-    client.leave(req?.roomId);
+  handleDisconnect(client: Socket) {
+    this.redis.del(client.request.headers.authorization);
   }
-  @SubscribeMessage("information")
-  getInformation(
+
+  @SubscribeMessage(EVENT.JOIN)
+  joinRoom(
+    @MessageBody("room") room: number,
     @ConnectedSocket() client: Socket,
-  ): Observable<WsResponse<string>> {
-    console.log(`id : ${client.id}, room list : ${client.rooms.size}`);
+  ) {
+    client.join(room.toString());
+    return `success join room : ${room}`;
+  }
 
-    return from(client.rooms.values()).pipe(
-      map((i) => ({ event: "information", data: i })),
-    );
+  @SubscribeMessage(EVENT.EVERYONE)
+  everyoneMessage(
+    @MessageBody("message") message: string,
+    @ConnectedSocket() client: Socket,
+  ) {
+    const from = client.request.headers.authorization;
+    this.server.emit(EVENT.EVERYONE, { from, message });
+  }
+
+  @SubscribeMessage(EVENT.WHISPER)
+  async whisper(@MessageBody() req, @ConnectedSocket() client: Socket) {
+    const from = client.request.headers.authorization;
+    const target = await this.redis.get(req.target);
+    client.to(target).emit(EVENT.WHISPER, { from, message: req.message });
+  }
+
+  @SubscribeMessage(EVENT.CHANNEL_MESSAGE)
+  async listenMessage(
+    @MessageBody("room") room: number,
+    @MessageBody("message") message: string,
+    @ConnectedSocket() client: Socket,
+  ) {
+    client.broadcast.to(room.toString()).emit(EVENT.CHANNEL_MESSAGE, {
+      from: await this.redis.get(client.id),
+      message,
+    });
+  }
+
+  @SubscribeMessage(EVENT.LEAVE)
+  leaveRoom(
+    @MessageBody("room") room: number,
+    @ConnectedSocket() client: Socket,
+  ) {
+    client.leave(room.toString());
   }
 }

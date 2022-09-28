@@ -6,6 +6,8 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "start:debug:1st": "cross-env NODE_PORT=3001 nest start --debug --watch",
+    "start:debug:2nd": "cross-env NODE_PORT=3002 nest start --debug --watch",
     "prebuild": "rimraf dist",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -17,16 +19,22 @@
   },
   "dependencies": {
     "@nestjs/common": "^9.0.0",
+    "@nestjs/config": "^2.2.0",
     "@nestjs/core": "^9.0.0",
     "@nestjs/platform-express": "^9.0.0",
     "@nestjs/platform-socket.io": "^9.1.2",
     "@nestjs/websockets": "^9.1.2",
     "@socket.io/redis-adapter": "^7.2.0",
+    "@types/socket.io": "^3.0.2",
+    "cache-manager": "^4.1.0",
+    "cross-env": "^7.0.3",
+    "joi": "^17.6.1",
     "redis": "^4.3.1",
     "reflect-metadata": "^0.1.13",
     "rimraf": "^3.0.2",
     "rxjs": "^7.2.0",
-    "socket.io": "^4.5.2"
+    "socket.io": "^4.5.2",
+    "socket.io-redis": "^6.1.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^9.0.0",
